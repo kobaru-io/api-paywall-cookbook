@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
-import { paymentMiddleware, x402ResourceServer, HonoAdapter } from "@x402/hono";
+import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
+import type { HTTPRequestContext } from "@x402/core/http";
 import { Network } from "@x402/core/types";
 import { ExactSvmScheme } from "@x402/svm/exact/server";
 import { HTTPFacilitatorClient } from "@x402/core/server";
@@ -136,6 +137,29 @@ app.get("/", (c) => {
 // ==========================================
 // We use a dynamic configuration to calculate price based on video length.
 // This object tells the middleware HOW to charge for the endpoint.
+async function prepareWisdomPrice(body: { url?: string } | undefined): Promise<string> {
+    try {
+        if (!body || !body.url) {
+            return "0.01";
+        }
+
+        const sanitizedUrl = validateAndNormalizeYouTubeUrl(body.url);
+        const result = await wisdomService.prepareForWisdom(sanitizedUrl);
+        return result.price.amount;
+    } catch (error) {
+        if (error instanceof InvalidUrlError) {
+            throw new HTTPException(400, { message: error.message });
+        }
+        if (error instanceof TranscriptNotFoundError) {
+            throw new HTTPException(404, { message: error.message });
+        }
+        if (error instanceof TranscriptEmptyError) {
+            throw new HTTPException(500, { message: error.message });
+        }
+        throw error;
+    }
+}
+
 const wisdomPaymentConfig = {
     accepts: {
         scheme: "exact" as const, // We want the exact amount
@@ -149,37 +173,9 @@ const wisdomPaymentConfig = {
         },
         // DYNAMIC PRICING: Calculate price based on the video URL in the body
         // This function is called by the middleware Interceptor BEFORE the 402 is generated.
-        price: async (context: any) => {
-            try {
-                // Parse body to get URL (HonoAdapter functionality)
-                const body = await context.adapter.getBody() as { url?: string };
-                if (!body || !body.url) {
-                    // If no URL, we default to floor price to show requirement.
-                    return "0.01"; // Default floor price
-                }
-
-                // Validate and normalize URL before processing
-                const sanitizedUrl = validateAndNormalizeYouTubeUrl(body.url);
-
-                // Use prepareForWisdom to calculate price (and cache transcript/price!)
-                // This ensures we don't do the heavy lifting twice.
-                const result = await wisdomService.prepareForWisdom(sanitizedUrl);
-                // WisdomService now returns Major Units (USDC string) e.g. "0.01"
-                return result.price.amount;
-            } catch (error) {
-                if (error instanceof InvalidUrlError) {
-                    throw new HTTPException(400, { message: error.message });
-                }
-                if (error instanceof TranscriptNotFoundError) {
-                    throw new HTTPException(404, { message: error.message });
-                }
-                if (error instanceof TranscriptEmptyError) {
-                    // Critical: Do NOT charge the user if the transcript is empty (logic error/unavailable content)
-                    // Return 500 to signal server-side incompatibility with this video.
-                    throw new HTTPException(500, { message: error.message });
-                }
-                throw error;
-            }
+        price: async (context: HTTPRequestContext) => {
+            const body = await context.adapter.getBody?.() as { url?: string } | undefined;
+            return prepareWisdomPrice(body);
         }
     },
     description: "Wisdom extracted from YouTube video",
@@ -245,6 +241,13 @@ const wisdomPaymentConfig = {
  */
 app.post(
     "/wisdom",
+    async (c, next) => {
+        // SDK 2.30 maps pricing exceptions to 500. Preserve input/transcript errors
+        // before entering the payment flow; the dynamic callback reuses this quote.
+        const body = await c.req.json().catch(() => undefined) as { url?: string } | undefined;
+        await prepareWisdomPrice(body);
+        await next();
+    },
     paymentMiddleware(
         { "POST /wisdom": wisdomPaymentConfig }, // Route config for this specific endpoint
         resourceServer

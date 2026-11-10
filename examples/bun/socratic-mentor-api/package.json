@@ -8,7 +8,7 @@
         "bun": ">=1.4.4 <1.5"
     },
     "scripts": {
-        "test": "bun test",
+        "test": "bun test --isolate",
         "dev": "bun run --watch deploy/bun/server.ts",
         "start": "bun run deploy/bun/server.ts",
         "typecheck": "tsc --noEmit"
