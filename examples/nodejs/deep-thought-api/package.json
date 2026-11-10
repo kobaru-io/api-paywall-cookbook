@@ -12,7 +12,7 @@
     "deploy:cloudflare": "wrangler deploy --config deploy/cloudflare/wrangler.jsonc --minify",
     "docker:build": "docker build -f deploy/docker/Dockerfile -t deep-thought-api .",
     "docker:run": "docker run -p 3000:3000 --env-file .env deep-thought-api",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --project tsconfig.test.json"
   },
   "keywords": [
     "x402",
@@ -25,21 +25,30 @@
   "author": "Kobaru.io",
   "license": "Apache-2.0",
   "dependencies": {
-    "@hono/node-server": "^1.13.0",
-    "@x402/core": "^2.1.0",
-    "@x402/evm": "^2.1.0",
-    "@x402/hono": "^2.1.0",
-    "@x402/svm": "^2.1.0",
-    "dotenv": "^17.2.3",
-    "hono": "^4.11.3"
+    "@hono/node-server": "2.1.6",
+    "@solana/kit": "8.6.0",
+    "@x402/core": "2.30.0",
+    "@x402/evm": "2.30.0",
+    "@x402/hono": "2.30.0",
+    "@x402/svm": "2.30.0",
+    "dotenv": "17.4.2",
+    "hono": "4.13.17"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241230.0",
     "@types/node": "24.19.2",
-    "tsx": "^4.19.0",
+    "tsx": "4.23.15",
     "typescript": "5.9.3",
-    "vitest": "^4.0.16",
+    "vitest": "4.1.12",
     "wrangler": "^4.4.0"
+  },
+  "overrides": {
+    "isows": {
+      "ws": "8.21.0"
+    },
+    "abitype": {
+      "zod": "4.6.7"
+    }
   },
   "engines": {
     "node": ">=24.22.1 <25"

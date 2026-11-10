@@ -40,6 +40,7 @@ vi.mock("@x402/core/server", async (importOriginal) => {
 // Mock @x402/hono to bypass payment validation logic
 vi.mock("@x402/hono", async (importOriginal) => {
     const actual = await importOriginal<typeof import("@x402/hono")>();
+    const { ExactSvmScheme } = await import("@x402/svm/exact/server");
     return {
         ...actual,
         x402ResourceServer: class {
@@ -47,6 +48,7 @@ vi.mock("@x402/hono", async (importOriginal) => {
             register() { }
             async initialize() { }
             hasRegisteredScheme() { return true; }
+            getRegisteredScheme() { return new ExactSvmScheme(); }
             buildPaymentRequirementsFromOptions(options: any) { return options; }
             createPaymentRequiredResponse(requirements: any) { return { accepts: requirements }; }
             getSupportedKind() {
