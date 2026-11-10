@@ -30,7 +30,8 @@
  * @see https://kobaru.io - Kobaru Facilitator Gateway
  */
 
-import { x402Client, wrapFetchWithPayment, x402HTTPClient } from "@x402/fetch";
+import { wrapFetchWithPayment, x402HTTPClient } from "@x402/fetch";
+import { createPaymentClient } from './payment-client.js';
 import { registerExactSvmScheme } from "@x402/svm/exact/client";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { createKeyPairSignerFromBytes } from "@solana/signers";
@@ -354,7 +355,7 @@ async function main() {
      *
      * Think of it as the "payment negotiation protocol handler".
      */
-    const client = new x402Client();
+    const client = createPaymentClient(userNetworkConfig);
     logInfo("x402 Protocol client initialized.");
     logExplanation("The x402 client handles the cryptographic payment protocol automatically.");
 
@@ -1193,4 +1194,3 @@ async function main() {
  * before exiting.
  */
 main();
-
