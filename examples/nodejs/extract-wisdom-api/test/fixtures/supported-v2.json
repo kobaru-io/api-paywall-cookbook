@@ -1,0 +1,10 @@
+{
+    "kinds": [{
+        "x402Version": 2,
+        "scheme": "exact",
+        "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+        "extra": { "feePayer": "11111111111111111111111111111111" }
+    }],
+    "extensions": ["bazaar"],
+    "signers": { "solana:*": ["11111111111111111111111111111111"] }
+}
