@@ -4,14 +4,14 @@
 # Run:   docker run -p 3000:3000 -e SOLANA_WALLET_ADDRESS=your-wallet -e BASE_WALLET_ADDRESS=your-base-wallet deep-thought-api
 
 # Stage 1: Build the application
-
+FROM node:24.22.1-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS builder
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 
 # Install all dependencies (including dev for build)
-RUN npm ci
+RUN npm ci --ignore-scripts --no-audit --no-fund
 
 # Copy source code
 COPY src/ ./src/
@@ -22,7 +22,7 @@ COPY tsconfig.json ./
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine AS runner
+FROM node:24.22.1-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS runner
 
 WORKDIR /app
 
@@ -30,7 +30,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install production dependencies only
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
