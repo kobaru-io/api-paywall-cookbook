@@ -3,6 +3,10 @@
     "version": "1.0.0",
     "description": "A Socratic AI Tutor monetized via x402 protocol using Vercel AI SDK (Bun)",
     "type": "module",
+    "packageManager": "bun@1.4.4",
+    "engines": {
+        "bun": ">=1.4.4 <1.5"
+    },
     "scripts": {
         "test": "bun test",
         "dev": "bun run --watch deploy/bun/server.ts",
