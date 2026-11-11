@@ -21,7 +21,7 @@
     "author": "Kobaru.io",
     "license": "Apache-2.0",
     "dependencies": {
-        "@google/generative-ai": "^0.24.1",
+        "@google/genai": "3.0.0",
         "@hono/node-server": "2.1.6",
         "@solana/kit": "8.6.0",
         "@x402/core": "2.30.0",
@@ -30,7 +30,7 @@
         "@x402/svm": "2.30.0",
         "dotenv": "16.6.1",
         "hono": "4.13.17",
-        "youtube-transcript-plus": "^1.1.2",
+        "youtube-transcript-plus": "2.0.3",
         "zod": "4.6.7"
     },
     "devDependencies": {

@@ -8,46 +8,69 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { GenerateContentResponse, type GenerateContentParameters, type GoogleGenAIOptions } from "@google/genai";
+import type { TranscriptSegment } from "youtube-transcript-plus";
 
-const client = vi.hoisted(() => ({ fetch: vi.fn(), model: vi.fn(), generate: vi.fn() }));
-vi.mock("youtube-transcript-plus", () => ({ fetchTranscript: client.fetch }));
-vi.mock("@google/generative-ai", () => ({ GoogleGenerativeAI: class {
-    getGenerativeModel(options: unknown) { client.model(options); return { generateContent: client.generate }; }
+const client = vi.hoisted(() => ({ fetch: vi.fn<(url: string) => Promise<TranscriptSegment[]>>(), construct: vi.fn(), generate: vi.fn<(params: GenerateContentParameters) => Promise<GenerateContentResponse>>() }));
+vi.mock("youtube-transcript-plus", async importOriginal => ({ ...await importOriginal<typeof import("youtube-transcript-plus")>(), fetchTranscript: client.fetch }));
+vi.mock("@google/genai", async importOriginal => ({ ...await importOriginal<typeof import("@google/genai")>(), GoogleGenAI: class {
+    constructor(options: GoogleGenAIOptions) { client.construct(options); }
+    models = { generateContent: client.generate };
 } }));
+
+function generated(text?: string, usageMetadata?: GenerateContentResponse["usageMetadata"]) {
+    return Object.assign(new GenerateContentResponse(), {
+        candidates: text === undefined ? [] : [{ content: { parts: [{ text }] } }], usageMetadata
+    });
+}
 
 beforeEach(() => { vi.clearAllMocks(); client.fetch.mockReset(); client.generate.mockReset(); });
 
 describe("adapter boundaries (no external AI or YouTube requests)", () => {
-    it.each([["pt", "pt"], [undefined, "en"]])("joins transcript segments and detects/defaults language %s", async (lang, expected) => {
-        client.fetch.mockResolvedValue([{ text: "one", lang }, { text: "two" }]);
+    it.each([["pt", "pt"], ["", "en"]])("joins transcript segments and detects/defaults language %s", async (lang, expected) => {
+        client.fetch.mockResolvedValue([{ text: "one", lang, offset: 0, duration: 1 }, { text: "two", lang, offset: 1, duration: 1 }]);
         expect(await new YouTubeAdapter().fetch("url")).toEqual({ text: "one two", language: expected });
         expect(client.fetch).toHaveBeenCalledWith("url");
     });
 
-    it.each([{ segments: [] }, { segments: [{ text: "  " }] }])("rejects empty transcript $segments", async ({ segments }) => {
+    it("retains the defensive default for a provider segment with missing language", async () => {
+        const segment = { text: "one", offset: 0, duration: 1 };
+        client.fetch.mockResolvedValue([segment as TranscriptSegment]);
+        expect(await new YouTubeAdapter().fetch("url")).toEqual({ text: "one", language: "en" });
+    });
+
+    it.each([{ segments: [] }, { segments: [{ text: "  ", lang: "en", offset: 0, duration: 1 }] }])("rejects empty transcript $segments", async ({ segments }) => {
         client.fetch.mockResolvedValue(segments);
         await expect(new YouTubeAdapter().fetch("url")).rejects.toBeInstanceOf(TranscriptEmptyError);
     });
 
-    it.each(["YoutubeTranscriptNotAvailableError", "YoutubeTranscriptDisabledError", "YoutubeTranscriptInvalidVideoIdError", "YoutubeTranscriptVideoUnavailableError", "UnexpectedError"])("maps %s to not found", async name => {
-        client.fetch.mockRejectedValue(Object.assign(new Error("fixture failure"), { name }));
-        await expect(new YouTubeAdapter().fetch("url")).rejects.toBeInstanceOf(TranscriptNotFoundError);
+    it.each([
+        "YoutubeTranscriptNotAvailableError", "YoutubeTranscriptDisabledError", "YoutubeTranscriptInvalidVideoIdError",
+        "YoutubeTranscriptVideoUnavailableError", "YoutubeTranscriptTooManyRequestError", "YoutubeTranscriptNotAvailableLanguageError", "UnexpectedError"
+    ])("maps %s to not found", async name => {
+        const error = Object.assign(new Error("fixture failure"), { name });
+        client.fetch.mockRejectedValue(error);
+        const result = new YouTubeAdapter().fetch("url");
+        await expect(result).rejects.toBeInstanceOf(TranscriptNotFoundError);
+        if (["YoutubeTranscriptNotAvailableError", "YoutubeTranscriptDisabledError", "YoutubeTranscriptInvalidVideoIdError", "YoutubeTranscriptVideoUnavailableError"].includes(error.name)) {
+            await expect(result).rejects.toThrow(`Transcript not available: ${error.message}`);
+        }
     });
 
     it.each([false, true])("parses Gemini JSON, including fenced output=%s, and preserves model/prompt", async fenced => {
         const wisdom = { summary: "fixture", ideas: [], quotes: [], references: [] };
         const json = JSON.stringify(wisdom);
-        client.generate.mockResolvedValue({ response: { text: () => fenced ? `\u0060\u0060\u0060json\n${json}\n\u0060\u0060\u0060` : json, usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 20, totalTokenCount: 30 } } });
+        client.generate.mockResolvedValue(generated(fenced ? `\u0060\u0060\u0060json\n${json}\n\u0060\u0060\u0060` : json, { promptTokenCount: 10, candidatesTokenCount: 20, totalTokenCount: 30 }));
         const log = vi.spyOn(console, "log");
         expect(await new GeminiAdapter("fixture-key").extractWisdom("transcript", "es", "pt")).toEqual(wisdom);
-        expect(client.model).toHaveBeenCalledWith({ model: "gemini-2.5-flash", systemInstruction: getSystemInstruction("es", "pt"), generationConfig: { responseMimeType: "application/json" } });
-        expect(client.generate).toHaveBeenCalledWith("transcript");
+        expect(client.construct).toHaveBeenCalledWith({ apiKey: "fixture-key" });
+        expect(client.generate).toHaveBeenCalledWith({ model: "gemini-2.5-flash", contents: "transcript", config: { systemInstruction: getSystemInstruction("es", "pt"), responseMimeType: "application/json" } });
         expect(log).toHaveBeenCalledWith("[INFO] Gemini Token Usage: Input=10, Output=20, Total=30");
         log.mockRestore();
     });
 
-    it.each(["", "not JSON", "{invalid}"])("preserves external error for invalid model output %s", async text => {
-        client.generate.mockResolvedValue({ response: { text: () => text } });
+    it.each([undefined, "", "not JSON", "{invalid}"])("preserves external error for invalid model output %s", async text => {
+        client.generate.mockResolvedValue(generated(text));
         await expect(new GeminiAdapter("fixture-key").extractWisdom("text", "en", "en")).rejects.toThrow("Failed to extract wisdom");
     });
 
