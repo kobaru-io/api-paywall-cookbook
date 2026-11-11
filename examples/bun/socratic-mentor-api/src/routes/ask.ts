@@ -105,7 +105,7 @@ export function createAskRoute(
     }];
 
     app.post("/", async (c) => {
-        const requestId = (c.get("requestId") as string) || "unknown";
+        const requestId = c.get("requestId") || "unknown";
         console.log(`[${new Date().toISOString()}] [${requestId}] [Ask] Received request`);
 
         // ---------------------------------------------------------
@@ -122,8 +122,8 @@ export function createAskRoute(
         // This prevents SQL injection, prompt injection, XSS, and other attacks
         const parsed = AskRequestSchema.safeParse(body);
         if (!parsed.success) {
-            console.log(`[${new Date().toISOString()}] [Ask] Validation failed:`, parsed.error.errors);
-            return Errors.invalidInput(c, parsed.error.errors.map(e => ({ path: e.path.join('.'), message: e.message })));
+            console.log(`[${new Date().toISOString()}] [Ask] Validation failed:`, parsed.error.issues);
+            return Errors.invalidInput(c, parsed.error.issues.map(e => ({ path: e.path.join('.'), message: e.message })));
         }
 
         // All inputs are now validated and sanitized
