@@ -4,12 +4,15 @@ import { readFileSync } from "node:fs";
 import { decodePaymentRequiredHeader, decodePaymentResponseHeader, encodePaymentSignatureHeader } from "@x402/core/http";
 import type { PaymentRequired, SettleRequest, SettleResponse, SupportedResponse, VerifyRequest, VerifyResponse } from "@x402/core/types";
 import type { Hono } from "hono";
+import { getSystemInstruction } from "../src/core/prompts/ExtractWisdom.js";
+import { FinishReason } from "@google/genai";
 
 const clients = vi.hoisted(() => ({ transcript: vi.fn(), generate: vi.fn() }));
 vi.mock("youtube-transcript-plus", () => ({ fetchTranscript: clients.transcript }));
-vi.mock("@google/generative-ai", () => ({
-    GoogleGenerativeAI: class {
-        getGenerativeModel() { return { generateContent: clients.generate }; }
+vi.mock("@google/genai", async importOriginal => ({
+    ...await importOriginal<typeof import("@google/genai")>(),
+    GoogleGenAI: class {
+        models = { generateContent: clients.generate };
     }
 }));
 
@@ -51,7 +54,7 @@ beforeEach(async () => {
     verifyResult = { isValid: false, invalidReason: "invalid_transaction" };
     settleResult = { success: true, transaction: "local-fixture-not-a-chain-transaction", network };
     clients.transcript.mockReset().mockResolvedValue([{ text: "a".repeat(80000), lang: "pt", offset: 0, duration: 1 }]);
-    clients.generate.mockReset().mockResolvedValue({ response: { text: () => JSON.stringify(wisdom) } });
+    clients.generate.mockReset().mockResolvedValue({ text: JSON.stringify(wisdom) });
     vi.resetModules();
     app = (await import("../src/presentation/http/app.js")).default;
 });
@@ -156,9 +159,37 @@ describe("HTTP contracts with the real x402 SDK and a loopback facilitator", () 
         expect(await response.json()).toEqual(wisdom);
         expect(clients.transcript).toHaveBeenCalledTimes(1);
         expect(clients.generate).toHaveBeenCalledTimes(1);
+        expect(clients.generate).toHaveBeenCalledWith({
+            model: "gemini-2.5-flash", contents: "a".repeat(80000),
+            config: { systemInstruction: getSystemInstruction("es", "pt"), responseMimeType: "application/json" }
+        });
         expect(calls.filter(c => c.path === "/verify" || c.path === "/settle").map(c => c.path)).toEqual(["/verify", "/settle"]);
         expect(calls.find(c => c.path === "/settle")).toMatchObject({ authorization: "Bearer test-only-facilitator-key", body: { paymentRequirements: required.accepts[0] } });
         expect(decodePaymentResponseHeader(response.headers.get("PAYMENT-RESPONSE")!)).toMatchObject(settleResult);
+    });
+
+    it("preserves the provider failure response and never settles failed wisdom", async () => {
+        const required = await quote();
+        verifyResult = { isValid: true };
+        clients.generate.mockRejectedValueOnce(new Error("fixture provider unavailable"));
+        const response = await request(undefined, signature(required));
+        expect(response.status).toBe(500);
+        expect(await response.json()).toEqual({ error: "Failed to extract wisdom" });
+        expect(calls.filter(c => c.path === "/verify")).toHaveLength(1);
+        expect(calls.some(c => c.path === "/settle")).toBe(false);
+    });
+
+    it.each([FinishReason.RECITATION, FinishReason.SAFETY, FinishReason.LANGUAGE])("never settles legacy blocked reason %s carrying valid JSON", async finishReason => {
+        const required = await quote();
+        verifyResult = { isValid: true };
+        clients.generate.mockResolvedValueOnce({
+            text: JSON.stringify(wisdom), candidates: [{ finishReason, content: { parts: [{ text: JSON.stringify(wisdom) }] } }]
+        });
+        const response = await request(undefined, signature(required));
+        expect(response.status).toBe(500);
+        expect(await response.json()).toEqual({ error: "Failed to extract wisdom" });
+        expect(calls.filter(c => c.path === "/verify")).toHaveLength(1);
+        expect(calls.some(c => c.path === "/settle")).toBe(false);
     });
 
     it("does not return successful wisdom when settlement fails", async () => {

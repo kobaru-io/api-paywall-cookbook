@@ -1,6 +1,12 @@
 import { Context, Next } from "hono";
 import { v7 as uuidv7 } from "uuid";
 
+declare module "hono" {
+    interface ContextVariableMap {
+        requestId: string;
+    }
+}
+
 /**
  * Request ID middleware for distributed tracing and debugging.
  * 

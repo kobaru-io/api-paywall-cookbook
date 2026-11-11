@@ -63,7 +63,7 @@ export async function createApp(config: AppConfig) {
     // Custom Logger:
     // Wraps standard logging with the Request ID for traceability.
     app.use("*", async (c, next) => {
-        const requestId = (c.get("requestId") as string) || "unknown";
+        const requestId = c.get("requestId") || "unknown";
         console.log(`[${new Date().toISOString()}] [${requestId}] ${c.req.method} ${c.req.path}`);
         await next();
         console.log(`[${new Date().toISOString()}] [${requestId}] Completed ${c.req.method} ${c.req.path} - Status: ${c.res.status}`);

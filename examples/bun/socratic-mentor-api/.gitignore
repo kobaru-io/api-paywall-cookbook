@@ -55,3 +55,4 @@ docs/
 
 # Test Coverage
 coverage/
+package-lock.json

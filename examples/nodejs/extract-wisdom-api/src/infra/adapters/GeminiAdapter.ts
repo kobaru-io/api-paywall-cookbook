@@ -1,6 +1,6 @@
 import { AIProvider } from "../../core/ports/Interfaces.js";
 import { Wisdom } from "../../core/entities/Types.js";
-import { GoogleGenerativeAI, GenerativeModel } from "@google/generative-ai";
+import { FinishReason, GoogleGenAI } from "@google/genai";
 
 import { getSystemInstruction } from "../../core/prompts/ExtractWisdom.js";
 
@@ -10,11 +10,11 @@ import { getSystemInstruction } from "../../core/prompts/ExtractWisdom.js";
 // This class implements the "AIProvider" interface defined in our core.
 // It uses the simple API Key based Google Generative AI SDK.
 export class GeminiAdapter implements AIProvider {
-    private genAI: GoogleGenerativeAI;
+    private genAI: GoogleGenAI;
 
     constructor(apiKey: string) {
         // Initialize the Google Generative AI client
-        this.genAI = new GoogleGenerativeAI(apiKey);
+        this.genAI = new GoogleGenAI({ apiKey });
     }
 
     /**
@@ -30,18 +30,21 @@ export class GeminiAdapter implements AIProvider {
             // Get the system instruction (with dynamic language instruction)
             const systemInstruction = getSystemInstruction(outputLanguage, originalLanguage);
 
-            // Initialize model dynamically to include the custom system instruction
-            const model = this.genAI.getGenerativeModel({
+            const response = await this.genAI.models.generateContent({
                 model: "gemini-2.5-flash",
-                systemInstruction: systemInstruction,
-                generationConfig: {
+                contents: transcript,
+                config: {
+                    systemInstruction: systemInstruction,
                     responseMimeType: "application/json",
                 }
             });
 
-            const result = await model.generateContent(transcript);
-            const response = result.response;
-            const text = response.text();
+            const finishReason = response.candidates?.[0]?.finishReason;
+            // Preserve the legacy SDK's text() rejection policy, not all non-STOP reasons.
+            if (finishReason && [FinishReason.RECITATION, FinishReason.SAFETY, FinishReason.LANGUAGE].includes(finishReason)) {
+                throw new Error("Gemini response has a blocked finish reason");
+            }
+            const text = response.text;
 
             if (!text) {
                 throw new Error("No response from Gemini");

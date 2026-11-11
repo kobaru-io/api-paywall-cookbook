@@ -50,12 +50,12 @@ export function errorResponse(
     message: string,
     details?: unknown
 ) {
-    const requestId = (c.get("requestId") as string) || undefined;
+    const requestId = c.get("requestId") || undefined;
 
     const body: ApiError = {
         error,
         message,
-        ...(details && { details }),
+        ...(details ? { details } : {}),
         ...(requestId && { requestId })
     };
 

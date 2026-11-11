@@ -104,9 +104,12 @@ export const MainGoalSchema = z.string()
     .optional();
 
 /**
- * Zod schema for session ID validation (UUID v7 format)
+ * Preserve the Zod 3 UUID shape; supplied IDs need not have RFC version/variant bits.
  */
-export const SessionIdSchema = z.string().uuid("Invalid session ID format");
+export const SessionIdSchema = z.string().regex(
+    /^[0-9a-fA-F]{8}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{12}$/i,
+    "Invalid session ID format"
+);
 
 // =============================================================================
 // SIGNATURE HASH VALIDATION

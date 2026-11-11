@@ -1,4 +1,4 @@
-import { generateObject } from "ai";
+import { generateText, Output } from "ai";
 import { google } from "@ai-sdk/google";
 import { z } from "zod";
 import { SOCRATIC_SYSTEM_PROMPT } from "./prompt.js";
@@ -58,17 +58,15 @@ export async function generateSocraticResponse(
 
   console.log(`[GEMINI] Request size: ${inputPrompt.length} chars`);
 
-  // Call the AI model
-  // generateObject() automatically forces the model to output JSON matching our schema.
-  // This is much more reliable than asking for JSON in the system prompt.
-  const result = await generateObject({
+  // The SDK validates structured output before returning conversation state.
+  const result = await generateText({
     model: MODEL,
-    schema: ResponseSchema,
+    output: Output.object({ schema: ResponseSchema }),
     system: SOCRATIC_SYSTEM_PROMPT,
     prompt: inputPrompt,
   });
 
-  console.log(`[GEMINI] Response received, size: ${JSON.stringify(result.object).length} chars`);
+  console.log(`[GEMINI] Response received, size: ${JSON.stringify(result.output).length} chars`);
 
-  return result.object;
+  return result.output;
 }
